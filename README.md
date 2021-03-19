@@ -48,8 +48,8 @@ ssh -A -C -p 3022 andre@localhost -o ServerAliveInterval=5 -o ServerAliveCountMa
 # Beware - files in the local directory will be delete if they do not exist on the remote directory
 # Assumes there is a NAT forward from localhost:3022 to VM:22
 # Make sure the trailing / is on these paths, so they get mirrored properly
-REMOTEDIR=/home/andre/work/SoundDevices/a20rx-core/output/release/
-LOCALDIR=/Users/andrerenaud/work/SoundDevices/release/
+REMOTEDIR=/home/andre/work/project/release/
+LOCALDIR=/Users/andrerenaud/work/project/release/
 mkdir -p "$LOCALDIR"
 
 # Start by getting set up
