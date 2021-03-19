@@ -1,7 +1,5 @@
 # MacOS set up for Linux/Cross platform development
 
-## Docker
-
 ## VirtualBox
 
 * Make sure the virtual box system has a large enough disk for development. The defaults are too small for Linux Kernel work. At least 50GB.
@@ -9,55 +7,55 @@
    * Make sure the CPUs in the VM are set to the same number as on the host - the default is 1
 
 * Install Debian (or similar)
-* Install NFS server & other basic development requirements
+* Install SSH server & other basic development requirements
 ```sh
-sudo apt install linux-headers-amd64 gcc make git bison flex bc libncurses-dev g++ unzip rsync lib32stdc++6 lib32z1 libc6-i386 nfs-kernel-server sudo
+sudo apt install linux-headers-amd64 gcc make git bison flex bc libncurses-dev g++ unzip rsync lib32stdc++6 lib32z1 libc6-i386 openssh-server sudo inotify-tools
 ```
+* Install the public key from the Mac into the VM as `authorized_keys` to make SSH access easier
 * Add the user in as a member of the `sudo` group (not needed for Ubuntu)
 ```sh
 su -
 vi /etc/group
 ```
-* Set up /etc/exports:
-```
-# Just open it up entirely, and squash every UID down to the local user
-/home/USER	192.168.56.0/24(rw,sync,no_subtree_check,insecure,all_squash,anonuid=1000,anongid=1000)
-```
-* Restart nfs-kernel-server
-```
-sudo /etc/init.d/nfs-kernel-server restart
-```
-* Install sshd
-   * Copy the keys from the host onto the guest, so that git access can be done properly from either
-   * Copy the id_rsa.pub file onto the guest machine and call it 'authorized_keys', so that ssh can go through smoothly
-* Set up both a NAT'd network interface (so the VM can get to the internet ok), and a host-only network interface (so we can NFS mount the guest folders back to the host & ssh into it nicely)
-   * We don't want to use the host-only interface for anything other than talking to the host, so shut down its gateway
-   * cat /etc/network/interfaces
-```
-# This file describes the network interfaces available on your system
-# and how to activate them. For more information, see interfaces(5).
-
-source /etc/network/interfaces.d/*
-
-# The loopback network interface
-auto lo
-iface lo inet loopback
-
-# The primary network interface
-auto enp0s3
-iface enp0s3 inet dhcp
-
-# This is the host-only network adapter.
-auto enp0s8
-iface enp0s8 inet dhcp
-	gateway 0.0.0.0
-```
-
-* Insert the virtualbox guest additions, mount & run them. Reboot so they take effect.
-```sh
-sudo mount /dev/cdrom /media/cdrom
-sudo /media/cdrom/VBoxLinuxAdditions.run
-sudo reboot
-```
-
+* Set up a port forward on the virtual machine so that ssh works
+   * `VBoxManage modifyvm myserver --natpf1 "ssh,tcp,,3022,,22"`
+   * https://stackoverflow.com/questions/5906441/how-to-ssh-to-a-virtualbox-guest-externally-through-a-host
 * Snapshot the Virtual Machine. This is the basic project-agnostic development setup.
+
+## Visual Code
+
+* Use the Visual Code Remote SSH extension to edit the files remotely
+* https://code.visualstudio.com/docs/remote/ssh
+
+## TMux + Iterm2
+
+* Install iterm2 on the Mac machine, and tmux on the remote Linux machine
+* Create a helper script that attaches to an existing tmux session (or creates it if it doesn't exist)
+```sh
+#!/bin/sh
+# Assumes there is a NAT forward from localhost:3022 to VM:22
+
+ssh -A -C -p 3022 andre@localhost -o ServerAliveInterval=5 -o ServerAliveCountMax=3 -t 'tmux -CC new-session -A -t laptopsession'
+```
+
+## Rsync/Inotify
+
+* Using `inotifywait` & `rsync`, it is possible to set up an automatic mirror of a directory on the VM to a local directory on the Mac
+* Don't use this for code, or large numbers of files, it is more for output artifacts/binaries
+```sh
+#!/bin/sh
+# Watches a remote directory for changes and mirrors the files down to a local directory
+# Beware - files in the local directory will be delete if they do not exist on the remote directory
+# Assumes there is a NAT forward from localhost:3022 to VM:22
+# Make sure the trailing / is on these paths, so they get mirrored properly
+REMOTEDIR=/home/andre/work/SoundDevices/a20rx-core/output/release/
+LOCALDIR=/Users/andrerenaud/work/SoundDevices/release/
+mkdir -p "$LOCALDIR"
+
+# Start by getting set up
+rsync -a --delete -e "ssh -p 3022" andre@localhost:"$REMOTEDIR" "$LOCALDIR"
+ssh -p 3022 andre@localhost inotifywait -r -m -e close_write -e delete --format '%w%f' "$REMOTEDIR" | while read MODFILE ; do
+        echo "$MODFILE changed. Resyncing..."
+        rsync -a --delete -e "ssh -p 3022" andre@localhost:"$REMOTEDIR" "$LOCALDIR"
+done
+```
